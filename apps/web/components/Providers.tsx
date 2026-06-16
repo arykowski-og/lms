@@ -108,10 +108,11 @@ nav[aria-label="Top navigation"] .logo > a::after {
   color: #4B3FFF;
   white-space: nowrap;
 }
-/* Align the page-width containers (top nav + main content) to the Capital
-   AdminBar gutter: flat 16px ($unit-2) left/right, full width — dropping LH's
-   shared max-w-(--breakpoint-2xl) mx-auto px-4/6/8 centering. */
-[class*="max-w-(--breakpoint-2xl)"][class*="mx-auto"] {
+/* Stretch the top-nav inner container to the Capital AdminBar gutter: flat 16px
+   ($unit-2) left/right, full width — dropping LH's max-w-(--breakpoint-2xl)
+   mx-auto px-4/6/8 centering. Scoped to the top nav only so the main page
+   content keeps LH's default centered max-width. */
+nav[aria-label="Top navigation"] [class*="max-w-(--breakpoint-2xl)"][class*="mx-auto"] {
   max-width: none !important;
   margin-left: 0 !important;
   margin-right: 0 !important;

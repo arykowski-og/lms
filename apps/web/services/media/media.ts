@@ -1,13 +1,9 @@
-import { getBackendUrl, getConfig } from '@services/config/config'
+import { getBackendUrl, getMediaUrl } from '@services/config/config'
 
-function getMediaUrl() {
-  const mediaUrl = getConfig('NEXT_PUBLIC_LEARNHOUSE_MEDIA_URL');
-  if (mediaUrl) {
-    return mediaUrl;
-  } else {
-    return getBackendUrl();
-  }
-}
+// getMediaUrl now lives in the config module so it shares getAPIUrl's
+// same-origin proxy logic: on split frontend/backend deploys it returns a
+// same-origin root so `content/...` requests flow through the /content proxy
+// and carry the session cookie (required for private-course block media).
 
 function getApiUrl() {
   return getBackendUrl();

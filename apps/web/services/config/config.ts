@@ -156,6 +156,24 @@ export const getAPIUrl = () => {
   if (isOnCustomDomain()) {
     return '/api/v1/'
   }
+  // Split frontend/API deploys (e.g. enablement-eosin.vercel.app calling
+  // enablement-api.vercel.app): when the configured backend is a *different
+  // origin* than the current page, also route client calls through the
+  // same-origin Next.js proxy (`app/api/v1/[...path]/route.ts`). Calling the
+  // backend cross-origin forces credentialed CORS on every request and breaks
+  // large multipart uploads (e.g. thumbnails) — the platform rejects the body
+  // edge-side with a 413/5xx that arrives WITHOUT CORS headers, which the
+  // browser surfaces as a misleading "No 'Access-Control-Allow-Origin'" error.
+  if (typeof window !== 'undefined' && !isLocalhostCheck(window.location.hostname)) {
+    try {
+      const backendOrigin = new URL(deriveAPIUrl(), window.location.origin).origin
+      if (backendOrigin !== window.location.origin) {
+        return '/api/v1/'
+      }
+    } catch {
+      // Malformed backend URL — fall through to the absolute path.
+    }
+  }
   return deriveAPIUrl()
 }
 

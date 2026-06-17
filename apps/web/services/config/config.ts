@@ -185,6 +185,31 @@ export const getServerAPIUrl = () => {
 
 export const getBackendUrl = () => getLEARNHOUSE_BACKEND_URL()
 
+// Base URL for media/content requests (everything under `content/...`:
+// thumbnails, avatars, and activity block media — images/video/pdf/audio).
+// Mirrors getAPIUrl(): when the backend is a *different origin* than the page
+// (split frontend/backend deploy, e.g. enablement-* → enablement-api) or on a
+// custom domain, return a same-origin root so the request goes through the
+// Next.js `/content/[...path]` proxy and carries the session cookie. This is
+// REQUIRED for private-course block media to render — a cross-origin <img>
+// cannot send credentials (SameSite=Lax), so the content route 401s and the
+// image breaks. Falls back to the absolute backend origin for same-origin /
+// localhost deploys, and honors an explicit NEXT_PUBLIC_LEARNHOUSE_MEDIA_URL.
+export const getMediaUrl = () => {
+  const explicit = getConfig('NEXT_PUBLIC_LEARNHOUSE_MEDIA_URL')
+  if (explicit) return explicit
+  if (isOnCustomDomain()) return '/'
+  if (typeof window !== 'undefined' && !isLocalhostCheck(window.location.hostname)) {
+    try {
+      const backendOrigin = new URL(deriveAPIUrl(), window.location.origin).origin
+      if (backendOrigin !== window.location.origin) return '/'
+    } catch {
+      // Malformed backend URL — fall through to the absolute backend origin.
+    }
+  }
+  return getLEARNHOUSE_BACKEND_URL()
+}
+
 /**
  * Get the upgrade/plan URL for a given org.
  * Uses LEARNHOUSE_PLATFORM_URL (the main platform, e.g. learnhouse.app).

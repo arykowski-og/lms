@@ -87,17 +87,21 @@ async def upload_content(
                 detail=f"File format {file_format} not allowed",
             )
 
-    object_path = f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}"
+    object_key = f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}"
 
     if content_delivery == "filesystem":
-        # Local/self-hosted only. This writes under the working directory, which
-        # is read-only on serverless runtimes (Vercel) — deploy with s3api there.
+        # Local filesystem delivery (self-hosted / VPS). Requires a writable,
+        # persistent disk — does NOT work on read-only/ephemeral serverless
+        # filesystems (e.g. Vercel, where only /tmp is writable); use s3api there.
         ensure_directory_exists(f"content/{type_of_dir}/{uuid}/{directory}")
-        with open(object_path, "wb") as f:
+        with open(object_key, "wb") as f:
             f.write(file_binary)
-            f.close()
 
     elif content_delivery == "s3api":
+        # Upload straight from memory with put_object so we never touch the local
+        # filesystem. The previous implementation wrote a temp file under
+        # `content/...` before uploading, which crashes on read-only serverless
+        # filesystems (Vercel) where the working directory is not writable.
         s3 = boto3.client(
             "s3",
             endpoint_url=learnhouse_config.hosting_config.content_delivery.s3api.endpoint_url,
@@ -105,17 +109,10 @@ async def upload_content(
         )
 
         bucket_name = learnhouse_config.hosting_config.content_delivery.s3api.bucket_name or "learnhouse-media"
-        s3_key = object_path
 
-        # Upload the bytes straight to S3 — never stage a local file. The
-        # serverless filesystem (Vercel) is read-only except /tmp, so the
-        # previous local-staging write raised OSError and 500'd every block-media
-        # upload (images/video/pdf/audio). put_object keeps the whole operation
-        # in memory and writes nothing to disk.
         try:
-            s3.put_object(Bucket=bucket_name, Key=s3_key, Body=file_binary)
-            s3.head_object(Bucket=bucket_name, Key=s3_key)
-            logger.debug("S3 upload successful: %s", s3_key)
+            s3.put_object(Bucket=bucket_name, Key=object_key, Body=file_binary)
+            logger.debug("S3 upload successful: %s", object_key)
         except ClientError as e:
             logger.error("S3 upload failed: %s", e)
             raise HTTPException(status_code=500, detail="File upload to storage failed")

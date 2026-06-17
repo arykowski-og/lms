@@ -87,18 +87,21 @@ async def upload_content(
                 detail=f"File format {file_format} not allowed",
             )
 
-    ensure_directory_exists(f"content/{type_of_dir}/{uuid}/{directory}")
+    object_key = f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}"
 
     if content_delivery == "filesystem":
-        # upload file to server
-        with open(
-            f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}",
-            "wb",
-        ) as f:
+        # Local filesystem delivery (self-hosted / VPS). Requires a writable,
+        # persistent disk — does NOT work on read-only/ephemeral serverless
+        # filesystems (e.g. Vercel, where only /tmp is writable); use s3api there.
+        ensure_directory_exists(f"content/{type_of_dir}/{uuid}/{directory}")
+        with open(object_key, "wb") as f:
             f.write(file_binary)
-            f.close()
 
     elif content_delivery == "s3api":
+        # Upload straight from memory with put_object so we never touch the local
+        # filesystem. The previous implementation wrote a temp file under
+        # `content/...` before uploading, which crashes on read-only serverless
+        # filesystems (Vercel) where the working directory is not writable.
         s3 = boto3.client(
             "s3",
             endpoint_url=learnhouse_config.hosting_config.content_delivery.s3api.endpoint_url,
@@ -106,23 +109,10 @@ async def upload_content(
         )
 
         bucket_name = learnhouse_config.hosting_config.content_delivery.s3api.bucket_name or "learnhouse-media"
-        local_path = f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}"
-        s3_key = local_path
-
-        # Write to local temp file for S3 upload
-        with open(local_path, "wb") as f:
-            f.write(file_binary)
 
         try:
-            s3.upload_file(local_path, bucket_name, s3_key)
-            s3.head_object(Bucket=bucket_name, Key=s3_key)
-            logger.debug("S3 upload successful: %s", s3_key)
+            s3.put_object(Bucket=bucket_name, Key=object_key, Body=file_binary)
+            logger.debug("S3 upload successful: %s", object_key)
         except ClientError as e:
             logger.error("S3 upload failed: %s", e)
             raise HTTPException(status_code=500, detail="File upload to storage failed")
-        finally:
-            # Clean up local temp file after S3 upload
-            try:
-                os.remove(local_path)
-            except OSError as cleanup_err:
-                logger.error("Failed to clean up temp file %s: %s", local_path, cleanup_err)

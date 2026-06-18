@@ -1,9 +1,17 @@
 const { withSentryConfig } = require("@sentry/nextjs");
 
+// API origin for the same-origin media reverse-proxy (see rewrites() below).
+// On split frontend/backend deploys (web on enablement-*, API on
+// enablement-api) the browser must only ever talk to the web origin so that
+// `content/...` media requests are same-origin and carry the session cookie —
+// a cross-site <img> cannot send credentials (SameSite=Lax). Trailing slash is
+// stripped so the rewrite destination is well-formed.
+const LEARNHOUSE_BACKEND_URL = (process.env.NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL || '').replace(/\/+$/, '')
+
 /** @type {import('common.next').NextConfig} */
 const nextConfig = {
   async rewrites() {
-    return [
+    const rewrites = [
       {
         source: '/umami/script.js',
         destination: `https://eu.umami.is/script.js`,
@@ -13,6 +21,18 @@ const nextConfig = {
         destination: `https://eu.umami.is/api/send`,
       },
     ]
+    // Reverse-proxy media/content same-origin to the API. Edge-level rewrite
+    // (more robust than an App Router route handler) — preserves Range requests
+    // for video/audio seeking and forwards cookies for private-course media.
+    // Only when the backend is a distinct origin (skipped on same-host/local
+    // deploys, where getMediaUrl() already points media straight at the API).
+    if (LEARNHOUSE_BACKEND_URL) {
+      rewrites.push({
+        source: '/content/:path*',
+        destination: `${LEARNHOUSE_BACKEND_URL}/content/:path*`,
+      })
+    }
+    return rewrites
   },
   async headers() {
     const shellOrigin = process.env.PSP_SHELL_ORIGIN || ''

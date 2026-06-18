@@ -225,8 +225,11 @@ export const config = {
      * 5. /examples (inside /public)
      * 6. all root files inside /public (e.g. /favicon.ico)
      * 7. /embed (activity embeds)
+     * 8. /content (media served from the API via the next.config rewrite —
+     *    must bypass the tenant catch-all, which would otherwise rewrite it to
+     *    /orgs/{slug}/content/... and 404)
      */
-    '/((?!api|_next|fonts|umami|examples|embed|monitoring|[\\w-]+\\.\\w+).*)',
+    '/((?!api|content|_next|fonts|umami|examples|embed|monitoring|[\\w-]+\\.\\w+).*)',
     '/sitemap.xml',
     '/robots.txt',
     '/payments/stripe/connect/oauth',

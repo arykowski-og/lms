@@ -88,19 +88,19 @@ const FlipcardExtension: React.FC = (props: any) => {
 
   const getSizeClass = () => {
     switch (size) {
-      case 'small': return 'w-64 h-36';
-      case 'medium': return 'w-80 h-48';
-      case 'large': return 'w-96 h-60';
-      default: return 'w-80 h-48';
+      case 'small': return 'w-72 h-48';
+      case 'medium': return 'w-96 h-64';
+      case 'large': return 'w-[30rem] h-80';
+      default: return 'w-96 h-64';
     }
   }
 
   const getFontSizeClass = () => {
     switch (size) {
       case 'small': return 'text-sm';
-      case 'medium': return 'text-lg';
-      case 'large': return 'text-xl';
-      default: return 'text-lg';
+      case 'medium': return 'text-base';
+      case 'large': return 'text-lg';
+      default: return 'text-base';
     }
   }
 
@@ -166,14 +166,15 @@ const FlipcardExtension: React.FC = (props: any) => {
             <div className="flex items-center justify-center mb-3 select-none pointer-events-none">
               <RotateCw size={getIconSizeClass()} className="opacity-70" />
             </div>
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 min-h-0 w-full overflow-y-auto flipcard-scroll">
+              <div className="min-h-full flex items-center justify-center">
               {isEditable && isEditingQuestion ? (
                 <textarea
                   ref={questionInputRef}
                   value={question}
                   onChange={handleQuestionChange}
                   onBlur={handleQuestionBlur}
-                  className="bg-white/20 backdrop-blur-sm text-white placeholder-white/70 p-2 rounded-lg w-full h-20 resize-none border-none outline-none text-center"
+                  className="bg-white/20 backdrop-blur-sm text-white placeholder-white/70 p-2 rounded-lg w-full h-24 resize-none border-none outline-none text-center"
                   placeholder={t('activities.enter_question')}
                 />
               ) : (
@@ -192,6 +193,7 @@ const FlipcardExtension: React.FC = (props: any) => {
                   )}
                 </div>
               )}
+              </div>
             </div>
             {!isEditingQuestion && (
               <div className="text-xs opacity-70 mt-3 select-none pointer-events-none">{t('activities.click_to_flip')}</div>
@@ -208,14 +210,15 @@ const FlipcardExtension: React.FC = (props: any) => {
             <div className="flex items-center justify-center mb-3 select-none pointer-events-none">
               <RotateCw size={getIconSizeClass()} className="opacity-70 rotate-180" />
             </div>
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 min-h-0 w-full overflow-y-auto flipcard-scroll">
+              <div className="min-h-full flex items-center justify-center">
               {isEditable && isEditingAnswer ? (
                 <textarea
                   ref={answerInputRef}
                   value={answer}
                   onChange={handleAnswerChange}
                   onBlur={handleAnswerBlur}
-                  className="bg-white/20 backdrop-blur-sm text-white placeholder-white/70 p-2 rounded-lg w-full h-20 resize-none border-none outline-none text-center"
+                  className="bg-white/20 backdrop-blur-sm text-white placeholder-white/70 p-2 rounded-lg w-full h-24 resize-none border-none outline-none text-center"
                   placeholder={t('activities.enter_answer')}
                 />
               ) : (
@@ -234,6 +237,7 @@ const FlipcardExtension: React.FC = (props: any) => {
                   )}
                 </div>
               )}
+              </div>
             </div>
             {!isEditingAnswer && (
               <div className="text-xs opacity-70 mt-3">{t('activities.click_to_flip_back')}</div>

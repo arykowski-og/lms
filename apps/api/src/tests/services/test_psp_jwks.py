@@ -149,16 +149,98 @@ def test_extracts_email_for_trusted_issuer(monkeypatch):
     assert psp_jwks.validate_shell_token(token) == "user@opengov.com"
 
 
-def test_missing_email_raises(monkeypatch):
+def test_missing_email_raises_when_userinfo_has_none(monkeypatch):
+    # No email in the verified claims AND the userinfo fallback yields nothing
+    # → the token is rejected with the single clear "no email" error.
     monkeypatch.setattr(psp_jwks, "_trusted_issuers", lambda: {"https://trusted/"})
     monkeypatch.setattr(psp_jwks, "_trusted_audiences", lambda: {"api://default"})
     monkeypatch.setattr(
         psp_jwks, "_verify_signature",
         lambda token, iss, auds: {"iss": "https://trusted/", "aud": "api://default"},
     )
+    monkeypatch.setattr(psp_jwks, "_fetch_userinfo_email", lambda iss, tok, sub: None)
     token = _make_token({"iss": "https://trusted/"})
     with pytest.raises(psp_jwks.ShellTokenError):
         psp_jwks.validate_shell_token(token)
+
+
+def test_falls_back_to_userinfo_when_email_absent(monkeypatch):
+    # Org-AS access token: verified claims carry `sub` but no `email`; the
+    # userinfo fallback supplies it. (Mirrors the mbr-agents API fix.)
+    monkeypatch.setattr(psp_jwks, "_trusted_issuers", lambda: {"https://trusted/"})
+    monkeypatch.setattr(psp_jwks, "_trusted_audiences", lambda: set())
+    monkeypatch.setattr(
+        psp_jwks, "_verify_signature",
+        lambda token, iss, auds: {"iss": "https://trusted/", "sub": "okta|123"},
+    )
+    captured = {}
+
+    def fake_fetch(issuer, tok, expected_sub):
+        captured["args"] = (issuer, expected_sub)
+        return "fallback@opengov.com"
+
+    monkeypatch.setattr(psp_jwks, "_fetch_userinfo_email", fake_fetch)
+    token = _make_token({"iss": "https://trusted/"})
+    assert psp_jwks.validate_shell_token(token) == "fallback@opengov.com"
+    # The verified token's sub is forwarded for the OIDC sub-match check.
+    assert captured["args"] == ("https://trusted/", "okta|123")
+
+
+def test_email_claim_skips_userinfo_fallback(monkeypatch):
+    # A token that already carries `email` must NOT trigger the userinfo round-trip.
+    monkeypatch.setattr(psp_jwks, "_trusted_issuers", lambda: {"https://trusted/"})
+    monkeypatch.setattr(psp_jwks, "_trusted_audiences", lambda: set())
+    monkeypatch.setattr(
+        psp_jwks, "_verify_signature",
+        lambda token, iss, auds: {"email": "claim@opengov.com", "sub": "okta|123"},
+    )
+
+    def boom(*_a, **_k):
+        raise AssertionError("userinfo fallback must not run when email is present")
+
+    monkeypatch.setattr(psp_jwks, "_fetch_userinfo_email", boom)
+    token = _make_token({"iss": "https://trusted/"})
+    assert psp_jwks.validate_shell_token(token) == "claim@opengov.com"
+
+
+class _FakeResp:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+def test_fetch_userinfo_email_returns_email_on_sub_match(monkeypatch):
+    monkeypatch.setattr(
+        psp_jwks, "_discovery_doc",
+        lambda iss: {"userinfo_endpoint": "https://trusted/oauth2/v1/userinfo"},
+    )
+    monkeypatch.setattr(
+        psp_jwks.httpx, "get",
+        lambda url, **kw: _FakeResp({"sub": "okta|123", "email": "u@opengov.com"}),
+    )
+    assert psp_jwks._fetch_userinfo_email("https://trusted/", "tok", "okta|123") == "u@opengov.com"
+
+
+def test_fetch_userinfo_email_rejects_sub_mismatch(monkeypatch):
+    monkeypatch.setattr(
+        psp_jwks, "_discovery_doc",
+        lambda iss: {"userinfo_endpoint": "https://trusted/oauth2/v1/userinfo"},
+    )
+    monkeypatch.setattr(
+        psp_jwks.httpx, "get",
+        lambda url, **kw: _FakeResp({"sub": "okta|someone-else", "email": "u@opengov.com"}),
+    )
+    assert psp_jwks._fetch_userinfo_email("https://trusted/", "tok", "okta|123") is None
+
+
+def test_fetch_userinfo_email_none_when_endpoint_absent(monkeypatch):
+    monkeypatch.setattr(psp_jwks, "_discovery_doc", lambda iss: {})
+    assert psp_jwks._fetch_userinfo_email("https://trusted/", "tok", "okta|123") is None
 
 
 def test_passes_raw_issuer_with_trailing_slash_to_verifier(monkeypatch):

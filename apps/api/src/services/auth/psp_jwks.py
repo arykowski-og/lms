@@ -30,11 +30,15 @@ def _trusted_audiences() -> set[str]:
 
 
 @lru_cache(maxsize=8)
-def _discover_jwks_uri(issuer: str) -> str:
+def _discovery_doc(issuer: str) -> dict:
     url = issuer.rstrip("/") + "/.well-known/openid-configuration"
     resp = httpx.get(url, timeout=5.0)
     resp.raise_for_status()
-    return resp.json()["jwks_uri"]
+    return resp.json()
+
+
+def _discover_jwks_uri(issuer: str) -> str:
+    return _discovery_doc(issuer)["jwks_uri"]
 
 
 @lru_cache(maxsize=8)
@@ -72,6 +76,44 @@ def _verify_signature(token: str, issuer: str, audiences: set[str]) -> dict:
     return claims
 
 
+def _fetch_userinfo_email(issuer: str, token: str, expected_sub) -> str | None:
+    """Resolve the user's email from the OIDC userinfo endpoint.
+
+    Okta's ORG authorization server (issuer `https://<tenant>.okta.com`) issues
+    access tokens with a fixed claim set that does NOT include `email`. When the
+    verified access token omits it, we call the issuer's `userinfo_endpoint`
+    with the same bearer (the shell requests the `email` scope, so userinfo
+    returns it). A custom authorization server that embeds `email` in the access
+    token never reaches this path.
+
+    Returns the email, or `None` when the endpoint is unknown, unreachable, the
+    userinfo `sub` does not match the verified token `sub` (OIDC Core §5.3.2), or
+    no email is present. Failures resolve to `None` so the caller raises the
+    single clear "no email" error rather than leaking transport details.
+    """
+    try:
+        userinfo_uri = _discovery_doc(issuer).get("userinfo_endpoint")
+    except Exception:
+        return None
+    if not userinfo_uri:
+        return None
+    try:
+        resp = httpx.get(
+            userinfo_uri,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return None
+    # OIDC Core §5.3.2: the userinfo `sub` MUST match the access token's `sub`,
+    # else the email would belong to a different principal than the verified token.
+    if expected_sub is not None and data.get("sub") != expected_sub:
+        return None
+    return data.get("email") or data.get("preferred_username") or None
+
+
 def validate_shell_token(token: str) -> str:
     """Validate `token` and return the email claim, or raise ShellTokenError."""
     if not token:
@@ -88,6 +130,10 @@ def validate_shell_token(token: str) -> str:
 
     claims = _verify_signature(token, raw_iss, _trusted_audiences())
     email = claims.get("email") or claims.get("preferred_username")
+    if not email:
+        # Org-AS access tokens omit `email`; resolve it from userinfo instead of
+        # rejecting the (otherwise valid) token.
+        email = _fetch_userinfo_email(raw_iss, token, claims.get("sub"))
     if not email:
         raise ShellTokenError("no email claim in token")
     return email

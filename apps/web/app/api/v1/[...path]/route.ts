@@ -25,10 +25,21 @@ async function proxyToBackend(request: NextRequest): Promise<Response> {
     }
   })
 
-  // Forward request body as-is (no parsing/re-serializing)
-  const body = request.method !== 'GET' && request.method !== 'HEAD'
-    ? request.body
-    : undefined
+  // Buffer the request body instead of streaming it. A streamed body
+  // (request.body + duplex:'half') is sent with chunked transfer-encoding and
+  // no Content-Length, which the Vercel Python serverless backend (@vercel/python,
+  // Lambda-backed) rejects at the gateway — the outbound fetch then throws and we
+  // return a 502. Buffering yields a Content-Length so multipart uploads (course
+  // thumbnails) and JSON bodies pass through. Note: Vercel serverless caps request
+  // bodies at ~4.5MB, so very large media uploads (video/SCORM) need a different
+  // path (e.g. an API not on serverless).
+  let body: ArrayBuffer | undefined = undefined
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    body = await request.arrayBuffer()
+    // Let fetch recompute Content-Length from the buffer; drop any forwarded
+    // length/encoding so it can't mismatch the buffered byte count.
+    headers.delete('content-length')
+  }
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 290_000)
@@ -38,10 +49,8 @@ async function proxyToBackend(request: NextRequest): Promise<Response> {
       method: request.method,
       headers,
       body,
-      // @ts-ignore — needed for streaming request bodies in Node.js
-      duplex: 'half',
       signal: controller.signal,
-    } as RequestInit)
+    })
     clearTimeout(timeoutId)
 
     // Build response headers, forwarding everything from backend.

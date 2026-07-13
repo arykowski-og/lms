@@ -101,11 +101,14 @@ function CreateCourseModal({ closeModal, orgslug }: any) {
             ? res.data.detail
             : Array.isArray(res.data?.detail)
               ? res.data.detail.map((e: any) => e.msg).join(', ')
-              : t('courses.failed_to_create_course')
+              : typeof res.data?.error === 'string'
+                ? res.data.error
+                : `${t('courses.failed_to_create_course')} (${res.status} ${res.HTTPmessage})`
           toast.error(errorMessage)
         }
       } catch (error) {
-        toast.error(t('courses.failed_to_create_course'))
+        const errorMessage = error instanceof Error ? error.message : t('courses.failed_to_create_course')
+        toast.error(errorMessage)
       } finally {
         setSubmitting(false)
       }

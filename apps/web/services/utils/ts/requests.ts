@@ -160,7 +160,15 @@ type CustomResponseTyping = {
 export const getResponseMetadata = async (
   fetch_result: any
 ): Promise<CustomResponseTyping> => {
-  const json = await fetch_result.json()
+  // Error responses aren't always JSON (proxy timeouts, platform-level
+  // rejections, HTML error pages) — a raw .json() call would throw and mask
+  // the real status/statusText behind a generic "unexpected error" upstream.
+  let json: any = null
+  try {
+    json = await fetch_result.json()
+  } catch {
+    json = null
+  }
   if (fetch_result.status === 200) {
     return {
       success: true,

@@ -10,6 +10,16 @@ const LEARNHOUSE_BACKEND_URL = (process.env.NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL |
 
 /** @type {import('common.next').NextConfig} */
 const nextConfig = {
+  // Vercel/Next's default trailing-slash normalization 308-redirects
+  // /api/v1/courses/ -> /api/v1/courses BEFORE it reaches our [...path]
+  // proxy route. The backend registers collection endpoints (e.g.
+  // POST /api/v1/courses/) WITH the trailing slash, so that redirect strips
+  // the slash the backend needs; the backend's own redirect_slashes then
+  // redirects again, and the proxy's outbound fetch() fails following that
+  // second hop (surfaced to users as a 502 "Backend unavailable" on course
+  // creation). Skip Next's redirect so /api/v1/* paths reach the proxy —
+  // and therefore the backend — exactly as the client sent them.
+  skipTrailingSlashRedirect: true,
   async rewrites() {
     const rewrites = [
       {
